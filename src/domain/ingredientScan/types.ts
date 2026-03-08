@@ -55,7 +55,7 @@ export interface IReport {
     warnings: string[];
     unknownIngredients: string[];
   };
-  createdAt: Date;
+  consultedAt: Date;
 }
 
 export interface BuildReportParams {

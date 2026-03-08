@@ -411,7 +411,7 @@ export default function MainApp() {
                   }}
                 >
                   REPORTE GENERADO ·{" "}
-                  {new Date(report.createdAt).toLocaleString("es-ES", {
+                  {new Date(report.consultedAt).toLocaleString("es-ES", {
                     dateStyle: "medium",
                     timeStyle: "short",
                   })}
