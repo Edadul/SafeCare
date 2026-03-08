@@ -9,30 +9,49 @@ import {
   COLORS,
 } from "./components/ingredientScan/UI";
 import {
-  type Perfil,
   type TabId,
-  type Report,
-  type ProxyResult,
+  type IReport,
+  type ReportDto,
+  Profile,
 } from "./domain/ingredientScan/types";
-import {
-  INGREDIENT_DB,
-  applyStrategy,
-  buildReport,
-  chainOfResponsibility,
-  proxyConsulta,
-} from "./domain/ingredientScan/engine";
+import { INGREDIENT_DB } from "./domain/ingredientScan/engine";
 
 // ─── Main App ─────────────────────────────────────────────────────
 export default function MainApp() {
-  const [perfil, setPerfil] = useState<Perfil>("normal");
+  const [perfil, setPerfil] = useState<Profile>(Profile.NORMAL);
   const [inputText, setInputText] = useState<string>("");
   const [ingredientes, setIngredientes] = useState<string[]>([]);
-  const [report, setReport] = useState<Report | null>(null);
+  const [report, setReport] = useState<IReport | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<TabId>("analisis");
   const reportRef = useRef<HTMLDivElement>(null);
 
   const SUGERENCIAS = Object.keys(INGREDIENT_DB);
+
+  async function handleSend() {
+    setLoading(true);
+    await getReport({
+      profile: perfil,
+      ingredients: ingredientes.map((i) => ({ name: i })),
+    });
+    setLoading(false);
+    setActiveTab("reporte");
+  }
+
+  async function getReport(ReportDto: ReportDto) {
+    const response = await fetch("http://localhost:3000/risk-report", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(ReportDto),
+    });
+    const data: IReport = await response.json();
+    console.log(data);
+
+    setReport(data);
+    return data;
+  }
 
   function addIngrediente(nombre: string): void {
     const n = nombre.trim().toLowerCase().replace(/\s+/g, "_");
@@ -52,33 +71,6 @@ export default function MainApp() {
     }
   }
 
-  async function analizar(): Promise<void> {
-    if (ingredientes.length === 0) return;
-    setLoading(true);
-    await new Promise<void>((r) => setTimeout(r, 900));
-
-    const proxyResults: ProxyResult[] = ingredientes.map(proxyConsulta);
-    const adjustedRisks: number[] = proxyResults.map((r) =>
-      applyStrategy(r.riskLevel, perfil),
-    );
-    const chain = chainOfResponsibility(adjustedRisks);
-    const rpt = buildReport({
-      ingredientes,
-      perfil,
-      proxyResults,
-      adjustedRisks,
-      chain,
-    });
-
-    setReport(rpt);
-    setLoading(false);
-    setActiveTab("reporte");
-    setTimeout(
-      () => reportRef.current?.scrollIntoView({ behavior: "smooth" }),
-      100,
-    );
-  }
-
   function reset(): void {
     setReport(null);
     setIngredientes([]);
@@ -87,7 +79,7 @@ export default function MainApp() {
   }
 
   interface PerfilOption {
-    id: Perfil;
+    id: Profile;
     label: string;
     desc: string;
     icon: string;
@@ -95,13 +87,13 @@ export default function MainApp() {
 
   const perfilOptions: PerfilOption[] = [
     {
-      id: "normal",
+      id: Profile.NORMAL,
       label: "Perfil Normal",
       desc: "Adultos sin condiciones especiales",
       icon: "◉",
     },
     {
-      id: "sensible",
+      id: Profile.SENSITIVE,
       label: "Perfil Sensible",
       desc: "Jóvenes 10-16 años · Mujeres gestantes · Alteraciones hormonales",
       icon: "◈",
@@ -361,7 +353,7 @@ export default function MainApp() {
 
             {/* Botón analizar */}
             <button
-              onClick={analizar}
+              onClick={handleSend}
               disabled={loading || ingredientes.length === 0}
               style={{
                 width: "100%",
@@ -418,7 +410,11 @@ export default function MainApp() {
                     marginBottom: 8,
                   }}
                 >
-                  REPORTE GENERADO · {report.fecha}
+                  REPORTE GENERADO ·{" "}
+                  {new Date(report.createdAt).toLocaleString("es-ES", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
                 </div>
                 <div
                   style={{
@@ -428,7 +424,7 @@ export default function MainApp() {
                     marginBottom: 4,
                   }}
                 >
-                  ID: <span style={{ color: COLORS.accent }}>{report.id}</span>
+                  {/* {Here can be something interesting} */}
                 </div>
                 <div
                   style={{
@@ -440,17 +436,19 @@ export default function MainApp() {
                 >
                   Perfil:{" "}
                   <Badge
-                    color={perfil === "sensible" ? COLORS.red : COLORS.green}
+                    color={
+                      perfil === Profile.SENSITIVE ? COLORS.red : COLORS.green
+                    }
                   >
-                    {report.perfil}
+                    {report.profile}
                   </Badge>
                   &nbsp;·&nbsp;Ingredientes analizados:{" "}
                   <span style={{ color: COLORS.text }}>
-                    {report.ingredientes.length}
+                    {report.ingredients.length}
                   </span>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {report.chain.alerts.length === 0 ? (
+                  {report.result.warnings.length === 0 ? (
                     <div
                       style={{
                         fontSize: 11,
@@ -465,7 +463,7 @@ export default function MainApp() {
                       ✓ Sin alertas críticas detectadas
                     </div>
                   ) : (
-                    report.chain.alerts.map((a, i) => (
+                    report.result.warnings.map((a, i) => (
                       <div
                         key={i}
                         style={{
@@ -484,7 +482,7 @@ export default function MainApp() {
                   )}
                 </div>
               </div>
-              <ScoreGauge score={report.puntajeFinal} />
+              <ScoreGauge score={report.result.finalScore} />
             </div>
 
             {/* Tabla ingredientes */}
@@ -513,7 +511,6 @@ export default function MainApp() {
                     {(
                       [
                         "Ingrediente",
-                        "Categoría",
                         "Nivel de Riesgo",
                         "Fuentes científicas",
                       ] as const
@@ -535,7 +532,7 @@ export default function MainApp() {
                   </tr>
                 </thead>
                 <tbody>
-                  {report.detalles.map((d, i) => (
+                  {report.ingredients.map((d, i) => (
                     <tr
                       key={i}
                       style={{
@@ -556,20 +553,17 @@ export default function MainApp() {
                           fontWeight: 600,
                         }}
                       >
-                        {d.nombre}
-                      </td>
-                      <td style={{ padding: "12px 16px" }}>
-                        <Badge color={COLORS.purple}>{d.categoria}</Badge>
+                        {d.name}
                       </td>
                       <td style={{ padding: "12px 16px", minWidth: 160 }}>
-                        <RiskBar value={d.riskAjustado} />
+                        <RiskBar value={d.riskLevelDB / 10} />
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         <div
                           style={{ display: "flex", gap: 4, flexWrap: "wrap" }}
                         >
-                          {d.fuentes.length > 0 ? (
-                            d.fuentes.map((f) => (
+                          {d.scientificSource.length > 0 ? (
+                            d.scientificSource.split(",").map((f) => (
                               <Badge key={f} color={COLORS.muted}>
                                 {f}
                               </Badge>

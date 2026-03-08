@@ -22,7 +22,8 @@ interface RiskBarProps {
 }
 
 export function RiskBar({ value, label, animated = true }: RiskBarProps) {
-  const color = value >= 0.7 ? COLORS.red : value >= 0.45 ? COLORS.yellow : COLORS.green;
+  const color =
+    value >= 0.7 ? COLORS.red : value >= 0.45 ? COLORS.yellow : COLORS.green;
 
   const barStyle = {
     width: `${value * 100}%`,
@@ -36,9 +37,30 @@ export function RiskBar({ value, label, animated = true }: RiskBarProps) {
   return (
     <div style={{ marginBottom: 6 }}>
       {label && (
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <span style={{ color: COLORS.muted, fontSize: 11, fontFamily: "monospace" }}>{label}</span>
-          <span style={{ color, fontSize: 11, fontFamily: "monospace", fontWeight: 700 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: 4,
+          }}
+        >
+          <span
+            style={{
+              color: COLORS.muted,
+              fontSize: 11,
+              fontFamily: "monospace",
+            }}
+          >
+            {label}
+          </span>
+          <span
+            style={{
+              color,
+              fontSize: 11,
+              fontFamily: "monospace",
+              fontWeight: 700,
+            }}
+          >
             {(value * 100).toFixed(1)}%
           </span>
         </div>
@@ -89,10 +111,11 @@ interface ScoreGaugeProps {
 }
 
 export function ScoreGauge({ score }: ScoreGaugeProps) {
-  const color = score >= 70 ? COLORS.red : score >= 40 ? COLORS.yellow : COLORS.green;
-  const label = score >= 70 ? "ALTO" : score >= 40 ? "MODERADO" : "BAJO";
-  const circ = Math.PI * 54;
-  const dash = (score / 100) * circ;
+  const color =
+    score >= 7 ? COLORS.red : score >= 4 ? COLORS.yellow : COLORS.green;
+  const label = score >= 7 ? "ALTO" : score >= 4 ? "MODERADO" : "BAJO";
+  const circ = Math.PI * 64;
+  const dash = (score / 10) * circ;
 
   return (
     <div style={{ textAlign: "center", padding: "16px 0" }}>
