@@ -1,0 +1,629 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Header } from "@/components/header";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  Clock3,
+  Loader2,
+  RefreshCcw,
+  RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
+  Zap,
+} from "lucide-react";
+import type {
+  BulkheadStatus,
+  CircuitBreakerStatus,
+  ResilienceOverview,
+  ResilienceScenarioId,
+  ResilienceSimulationResult,
+} from "@/lib/types";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+
+const scenarioStyles: Record<
+  ResilienceScenarioId,
+  { accent: string; icon: typeof ShieldCheck }
+> = {
+  healthy: { accent: "border-emerald-200 bg-emerald-50/70", icon: ShieldCheck },
+  slow: { accent: "border-amber-200 bg-amber-50/70", icon: Clock3 },
+  flaky: { accent: "border-sky-200 bg-sky-50/70", icon: RefreshCcw },
+  down: { accent: "border-rose-200 bg-rose-50/70", icon: ShieldAlert },
+};
+
+const patternFriendlyCopy: Record<
+  string,
+  {
+    metricValue: string;
+    metricHelper: string;
+    configExplanation: string;
+  }
+> = {
+  Retry: {
+    metricValue: "2 reintentos extra",
+    metricHelper: "Si algo falla, SafeCare vuelve a intentar con una espera cada vez mayor.",
+    configExplanation:
+      "Esto significa que, si una llamada falla, el sistema la puede intentar hasta 2 veces mas. Entre cada intento espera un poco mas para darle tiempo al servicio a recuperarse.",
+  },
+  Timeout: {
+    metricValue: "Maximo 1.2 s",
+    metricHelper: "Si una respuesta tarda demasiado, la peticion se corta.",
+    configExplanation:
+      "Esto significa que SafeCare no se queda esperando indefinidamente. Si el servicio tarda mas de 1.2 segundos, la llamada se detiene para evitar bloqueos.",
+  },
+  "Circuit Breaker": {
+    metricValue: "Proteccion activa",
+    metricHelper: "Si detecta muchas fallas seguidas, deja de insistir por un momento.",
+    configExplanation:
+      "Esto significa que, si ocurren 3 fallos seguidos, el circuito se abre y deja de llamar temporalmente al servicio inestable. Despues de 8 segundos vuelve a probar para revisar si ya se recupero.",
+  },
+};
+
+export default function ResiliencePage() {
+  const [overview, setOverview] = useState<ResilienceOverview | null>(null);
+  const [result, setResult] = useState<ResilienceSimulationResult | null>(null);
+  const [isLoadingOverview, setIsLoadingOverview] = useState(true);
+  const [isSimulating, setIsSimulating] = useState<ResilienceScenarioId | null>(
+    null,
+  );
+  const [isResetting, setIsResetting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadOverview();
+  }, []);
+
+  async function loadOverview() {
+    try {
+      setIsLoadingOverview(true);
+      const response = await fetch(`${API_URL}/resilience-patterns`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("No fue posible cargar la vista de resiliencia.");
+      }
+
+      setOverview((await response.json()) as ResilienceOverview);
+    } catch {
+      setError(
+        "No se pudo cargar el apartado de resiliencia. Verifica que el backend nuevo este activo.",
+      );
+    } finally {
+      setIsLoadingOverview(false);
+    }
+  }
+
+  async function simulateScenario(scenario: ResilienceScenarioId) {
+    try {
+      setIsSimulating(scenario);
+      setError(null);
+
+      const response = await fetch(`${API_URL}/resilience-patterns/simulate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ scenario }),
+      });
+
+      if (!response.ok) {
+        throw new Error("No fue posible ejecutar la simulacion.");
+      }
+
+      setResult((await response.json()) as ResilienceSimulationResult);
+      await loadOverview();
+    } catch {
+      setError("La simulacion fallo. Revisa el backend y vuelve a intentar.");
+    } finally {
+      setIsSimulating(null);
+    }
+  }
+
+  async function resetCircuitBreaker() {
+    try {
+      setIsResetting(true);
+      setError(null);
+
+      const response = await fetch(`${API_URL}/resilience-patterns/reset`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("No fue posible reiniciar el circuito.");
+      }
+
+      setResult(null);
+      await loadOverview();
+    } catch {
+      setError("No se pudo reiniciar el circuit breaker.");
+    } finally {
+      setIsResetting(false);
+    }
+  }
+
+  const retryPattern = overview?.patterns.find((pattern) => pattern.name === "Retry");
+  const timeoutPattern = overview?.patterns.find(
+    (pattern) => pattern.name === "Timeout",
+  );
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+
+      <main className="container mx-auto px-4 py-8">
+        <Link
+          href="/"
+          className="mb-6 inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Volver al Inicio
+        </Link>
+
+        <section className="relative overflow-hidden rounded-3xl border border-border bg-[radial-gradient(circle_at_top_right,_rgba(16,185,129,0.18),_transparent_35%),linear-gradient(135deg,_rgba(255,255,255,0.96),_rgba(240,253,250,0.92))] p-8 shadow-sm">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <Badge className="mb-4 bg-primary/10 text-primary hover:bg-primary/10">
+                Entrega 1 PF - Group 6 SafeCare
+              </Badge>
+              <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+                Resilience Patterns aplicados al backend nuevo
+              </h1>
+              <p className="mt-4 max-w-2xl text-muted-foreground">
+                Esta vista demuestra el inciso 3 sobre la arquitectura actual:
+                el backend ya usa resiliencia transversal y aqui se expone su
+                comportamiento con circuit breaker, retry y timeout.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <MetricCard
+                label="Circuit Breaker"
+                value={overview?.currentState?.state ?? "Cargando"}
+                helper={
+                  patternFriendlyCopy["Circuit Breaker"].metricHelper
+                }
+              />
+              <MetricCard
+                label="Retry"
+                value={retryPattern?.config ? patternFriendlyCopy.Retry.metricValue : "Cargando"}
+                helper={patternFriendlyCopy.Retry.metricHelper}
+              />
+              <MetricCard
+                label="Timeout"
+                value={
+                  timeoutPattern?.config
+                    ? patternFriendlyCopy.Timeout.metricValue
+                    : "Cargando"
+                }
+                helper={patternFriendlyCopy.Timeout.metricHelper}
+              />
+            </div>
+          </div>
+        </section>
+
+        {error && (
+          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div className="mt-8 grid gap-8 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="space-y-8">
+            <Card>
+              <CardHeader>
+                <CardTitle>Patrones implementados</CardTitle>
+                <CardDescription>
+                  El backend nuevo aplica estos mecanismos sobre servicios como
+                  analisis, productos, ingredientes y categorias.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-3">
+                {isLoadingOverview && !overview ? (
+                  <LoadingBlock label="Cargando patrones..." />
+                ) : (
+                  overview?.patterns.map((pattern) => (
+                    <div
+                      key={pattern.name}
+                      className="rounded-2xl border border-border bg-muted/40 p-4"
+                    >
+                      <div className="mb-3 flex items-center gap-2">
+                        <div className="rounded-full bg-primary/10 p-2 text-primary">
+                          {pattern.name === "Timeout" ? (
+                            <Clock3 className="h-4 w-4" />
+                          ) : pattern.name === "Retry" ? (
+                            <RotateCcw className="h-4 w-4" />
+                          ) : (
+                            <Zap className="h-4 w-4" />
+                          )}
+                        </div>
+                        <h2 className="font-semibold text-foreground">
+                          {pattern.name}
+                        </h2>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {pattern.description}
+                      </p>
+                      <div className="mt-4 space-y-2 rounded-xl bg-background px-3 py-3">
+                        <div className="text-sm font-medium text-foreground">
+                          {pattern.config}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {patternFriendlyCopy[pattern.name]?.configExplanation ??
+                            "Esta configuracion define cuando el patron se activa y como protege al backend."}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle>Simulador de fallos</CardTitle>
+                  <CardDescription>
+                    Ejecuta escenarios y observa como responde el backend nuevo
+                    con los patrones del inciso 3.
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={resetCircuitBreaker}
+                  disabled={isResetting}
+                >
+                  {isResetting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Reiniciando
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Reiniciar circuito
+                    </>
+                  )}
+                </Button>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                {overview?.scenarios.map((scenario) => {
+                  const scenarioMeta = scenarioStyles[scenario.id];
+                  const Icon = scenarioMeta.icon;
+                  const isRunning = isSimulating === scenario.id;
+
+                  return (
+                    <div
+                      key={scenario.id}
+                      className={`rounded-2xl border p-5 ${scenarioMeta.accent}`}
+                    >
+                      <div className="mb-4 flex items-center gap-3">
+                        <div className="rounded-full bg-white/80 p-2 text-foreground shadow-sm">
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-foreground">
+                            {scenario.label}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {scenario.summary}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        className="w-full"
+                        onClick={() => simulateScenario(scenario.id)}
+                        disabled={isRunning}
+                      >
+                        {isRunning ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Ejecutando simulacion
+                          </>
+                        ) : (
+                          "Probar escenario"
+                        )}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Registro de aislamiento y resiliencia</CardTitle>
+                <CardDescription>
+                  Estado de los circuit breakers y bulkheads activos dentro del
+                  backend.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <RegistrySection
+                  title="Circuit Breakers"
+                  items={overview?.registeredCircuitBreakers ?? []}
+                />
+                <RegistrySection
+                  title="Bulkheads"
+                  items={overview?.registeredBulkheads ?? []}
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-8">
+            <Card className="border-2 border-primary/20">
+              <CardHeader>
+                <CardTitle>Estado del circuito de demo</CardTitle>
+                <CardDescription>
+                  Informacion en tiempo real del backend de resiliencia.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {overview?.currentState ? (
+                  <CircuitStatusPanel status={overview.currentState} />
+                ) : (
+                  <LoadingBlock label="Cargando estado del circuito..." />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="min-h-[520px]">
+              <CardHeader>
+                <CardTitle>Resultado de la ultima simulacion</CardTitle>
+                <CardDescription>
+                  Flujo funcional del patron aplicado al backend nuevo.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {result ? (
+                  <div className="space-y-6">
+                    <div
+                      className={`rounded-2xl border px-4 py-4 ${
+                        result.success
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-amber-200 bg-amber-50"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {result.success ? (
+                          <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />
+                        ) : (
+                          <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-600" />
+                        )}
+                        <div>
+                          <p className="font-semibold text-foreground">
+                            {result.finalMessage}
+                          </p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Dependencia simulada: {result.simulatedDependency}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <MetricCard
+                        label="Intentos"
+                        value={`${result.retry.attempts}`}
+                        helper={`Maximo ${result.retry.maxRetries + 1} ejecuciones`}
+                      />
+                      <MetricCard
+                        label="Timeout"
+                        value={
+                          result.timeout.triggered
+                            ? "Activado"
+                            : `${result.timeout.durationMs} ms`
+                        }
+                        helper={`Limite ${result.timeout.limitMs} ms`}
+                      />
+                      <MetricCard
+                        label="Circuito"
+                        value={result.circuitBreaker?.state ?? "N/A"}
+                        helper={`Fallos ${result.circuitBreaker?.failureCount ?? 0}/${result.circuitBreaker?.failureThreshold ?? 0}`}
+                      />
+                    </div>
+
+                    {result.responsePayload && (
+                      <div className="rounded-2xl border border-border bg-muted/30 p-4">
+                        <h3 className="font-semibold text-foreground">
+                          Respuesta del backend
+                        </h3>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <InfoPill
+                            label="Origen"
+                            value={result.responsePayload.source}
+                          />
+                          <InfoPill
+                            label="Risk score"
+                            value={
+                              result.responsePayload.riskScore === null
+                                ? "No disponible"
+                                : `${result.responsePayload.riskScore}`
+                            }
+                          />
+                        </div>
+                        <p className="mt-3 text-sm text-muted-foreground">
+                          {result.responsePayload.recommendation}
+                        </p>
+                      </div>
+                    )}
+
+                    {result.fallbackMessage && (
+                      <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        {result.fallbackMessage}
+                      </div>
+                    )}
+
+                    <div>
+                      <h3 className="mb-3 font-semibold text-foreground">
+                        Flujo del patron
+                      </h3>
+                      <div className="space-y-3">
+                        {result.patternFlow.map((step, index) => (
+                          <div
+                            key={`${step}-${index}`}
+                            className="flex gap-3 rounded-2xl border border-border bg-background px-4 py-3"
+                          >
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                              {index + 1}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {step}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center">
+                    <div className="max-w-sm">
+                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Activity className="h-7 w-7" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-foreground">
+                        Sin simulacion aun
+                      </h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Ejecuta un escenario para demostrar el manejo de fallos
+                        del backend nuevo.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function CircuitStatusPanel({ status }: { status: CircuitBreakerStatus }) {
+  const stateTone =
+    status.state === "CLOSED"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : status.state === "HALF_OPEN"
+        ? "border-sky-200 bg-sky-50 text-sky-700"
+        : "border-rose-200 bg-rose-50 text-rose-700";
+
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-2xl border px-4 py-3 ${stateTone}`}>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium">Estado</span>
+          <span className="text-lg font-semibold">{status.state}</span>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InfoPill
+          label="Fallos acumulados"
+          value={`${status.failureCount}/${status.failureThreshold}`}
+        />
+        <InfoPill label="Exitos totales" value={`${status.totalSuccesses}`} />
+      </div>
+      <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        {status.nextAttemptAt
+          ? `Proxima prueba permitida: ${new Date(status.nextAttemptAt).toLocaleString("es-CO")}`
+          : "No hay ventana de espera pendiente; el circuito puede operar normalmente."}
+      </div>
+    </div>
+  );
+}
+
+function RegistrySection({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<CircuitBreakerStatus | BulkheadStatus>;
+}) {
+  return (
+    <div>
+      <h3 className="mb-3 font-semibold text-foreground">{title}</h3>
+      {items.length > 0 ? (
+        <div className="space-y-3">
+          {items.map((item) => (
+            <div
+              key={item.name}
+              className="rounded-2xl border border-border bg-muted/20 px-4 py-3"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium text-foreground">{item.name}</span>
+                {"state" in item ? (
+                  <Badge variant="outline">{item.state}</Badge>
+                ) : (
+                  <Badge variant="outline">
+                    {item.activeRequests}/{item.maxConcurrent}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-5 text-sm text-muted-foreground">
+          Sin registros todavia.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-card/90 px-4 py-3 shadow-sm">
+      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-2 text-lg font-semibold text-foreground">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{helper}</div>
+    </div>
+  );
+}
+
+function InfoPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-background px-4 py-3">
+      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function LoadingBlock({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-[140px] items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {label}
+      </div>
+    </div>
+  );
+}
